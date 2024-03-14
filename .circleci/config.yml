@@ -1,0 +1,60 @@
+version: 2
+notify:
+  webhooks:
+    - url: https://api.reviewee.it/notification/ci
+jobs:
+  pre-commit:
+    working_directory: ~/path-admin
+    docker:
+      - image: cimg/node:14.18.0
+    environment:
+      - REVIEWEE_URL: https://api.reviewee.it
+      - COMMITS_CHECK_ENDPOINT: repository/path-admin/haveRejectedCommits
+      - COMMITS_CHECK_INDICATOR: \"success\":true
+    steps:
+      - checkout
+      - run:
+          name: Install System Dependencies
+          command: |
+            sudo apt-get update && sudo apt-get -f install && sudo apt-get install wget
+      - run:
+          name: Install Node dependencies
+          command: |
+            npm install
+      - run:
+          name: Check Rejected Commits
+          command: wget ${REVIEWEE_URL}/${COMMITS_CHECK_ENDPOINT} -q -O - | grep -q ${COMMITS_CHECK_INDICATOR}
+  uat-push:
+    docker:
+      - image: cimg/node:14.18.0
+    steps:
+      - checkout
+      - run:
+          name: Heroku Staging Deploy
+          no_output_timeout: 20m
+          command: git push --force https://heroku:$HEROKU_API_KEY@git.heroku.com/$HEROKU_UAT_APP_NAME.git HEAD:refs/heads/master
+  prod-push:
+    docker:
+      - image: cimg/node:14.18.0
+    steps:
+      - checkout
+      - run:
+          name: Heroku Production Deploy
+          no_output_timeout: 20m
+          command: git push --force https://heroku:$HEROKU_API_KEY@git.heroku.com/$HEROKU_PROD_APP_NAME.git HEAD:refs/heads/master
+
+workflows:
+  version: 2
+  frontend-deploy:
+    jobs:
+      - pre-commit:
+          filters:
+            branches:
+              only:
+                - main
+      - uat-push:
+          requires:
+            - pre-commit
+      - prod-push:
+          requires:
+            - uat-push
